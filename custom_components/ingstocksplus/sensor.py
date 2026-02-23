@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -24,8 +25,30 @@ from .coordinator import INGStocksCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+# Icon mapping for value sensors (dynamic icons for change_* handled separately)
+KEY_TO_ICON: dict[str, str] = {
+    "price": "mdi:chart-line",
+    "dividend_yield": "mdi:cash-percent",
+    "dividend_per_share": "mdi:cash",
+    "price_earnings_ratio": "mdi:calculator-variant",
+    "market_capitalization": "mdi:bank",
+    "52w_low": "mdi:arrow-expand-vertical",
+    "52w_high": "mdi:arrow-expand-vertical",
+}
 
-def _safe_float(v):
+# Keyfigure value sensors: (key, entity_name, unique_suffix, device_class, unit, precision)
+# unit uses monetary_unit for €
+KEYFIGURE_VALUE_SENSORS: list[tuple[str, str, str, SensorDeviceClass | None, str | None, int | None]] = [
+    ("dividend_yield", "Dividendenrendite", "dividend_yield", None, "%", 4),
+    ("dividend_per_share", "Dividende je Anteil", "dividend_per_share", SensorDeviceClass.MONETARY, None, 3),
+    ("price_earnings_ratio", "KGV", "price_earnings_ratio", None, None, 2),
+    ("market_capitalization", "Marktkapitalisierung", "market_capitalization", None, None, 0),
+    ("52w_low", "52W Tief", "52w_low", SensorDeviceClass.MONETARY, None, 3),
+    ("52w_high", "52W Hoch", "52w_high", SensorDeviceClass.MONETARY, None, 3),
+]
+
+
+def _safe_float(v: Any) -> float | None:
     try:
         return float(v)
     except (TypeError, ValueError):
@@ -106,70 +129,29 @@ async def async_setup_entry(
 
     # Keyfigures-Sensoren: IMMER anlegen, aber werden None wenn API nichts liefert.
     # Dadurch verschwinden Entities nicht mehr aus der Registry.
-    sensors.extend(
-        [
+    for key, entity_name, unique_suffix, device_class, unit, precision in KEYFIGURE_VALUE_SENSORS:
+        sensors.append(
             INGStockValueSensor(
-                coordinator, entry, instrument_type,
-                key="dividend_yield",
-                entity_name="Dividendenrendite",
-                unique_suffix="dividend_yield",
-                device_class=None,
-                unit="%",
-                precision=4,
-            ),
-            INGStockValueSensor(
-                coordinator, entry, instrument_type,
-                key="dividend_per_share",
-                entity_name="Dividende je Anteil",
-                unique_suffix="dividend_per_share",
-                device_class=SensorDeviceClass.MONETARY,
-                unit=monetary_unit,
-                precision=3,
-            ),
-            INGStockValueSensor(
-                coordinator, entry, instrument_type,
-                key="price_earnings_ratio",
-                entity_name="KGV",
-                unique_suffix="price_earnings_ratio",
-                device_class=None,
-                unit=None,
-                precision=2,
-            ),
-            INGStockValueSensor(
-                coordinator, entry, instrument_type,
-                key="market_capitalization",
-                entity_name="Marktkapitalisierung",
-                unique_suffix="market_capitalization",
-                device_class=None,
-                unit=None,
-                precision=0,
-            ),
-            # Market cap currency als "Wert" (Text), bleibt aber Entity-stabil
-            INGStockTextSensor(
-                coordinator, entry, instrument_type,
-                key="market_cap_currency",
-                entity_name="Marktkap.-Währung",
-                unique_suffix="market_cap_currency",
-            ),
-            INGStockValueSensor(
-                coordinator, entry, instrument_type,
-                key="52w_low",
-                entity_name="52W Tief",
-                unique_suffix="52w_low",
-                device_class=SensorDeviceClass.MONETARY,
-                unit=monetary_unit,
-                precision=3,
-            ),
-            INGStockValueSensor(
-                coordinator, entry, instrument_type,
-                key="52w_high",
-                entity_name="52W Hoch",
-                unique_suffix="52w_high",
-                device_class=SensorDeviceClass.MONETARY,
-                unit=monetary_unit,
-                precision=3,
-            ),
-        ]
+                coordinator,
+                entry,
+                instrument_type,
+                key=key,
+                entity_name=entity_name,
+                unique_suffix=unique_suffix,
+                device_class=device_class,
+                unit=unit if unit is not None else monetary_unit,
+                precision=precision,
+            )
+        )
+    sensors.append(
+        INGStockTextSensor(
+            coordinator,
+            entry,
+            instrument_type,
+            key="market_cap_currency",
+            entity_name="Marktkap.-Währung",
+            unique_suffix="market_cap_currency",
+        )
     )
 
     async_add_entities(sensors, True)
@@ -178,9 +160,29 @@ async def async_setup_entry(
 class INGStockBaseSensor(SensorEntity):
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator: INGStocksCoordinator, entry: ConfigEntry):
+    def __init__(self, coordinator: INGStocksCoordinator, entry: ConfigEntry) -> None:
         self.coordinator = coordinator
         self.entry = entry
+
+    def _base_attributes(self) -> dict[str, Any]:
+        """Common attributes shared by all sensors (name, isin, exchange, etc.)."""
+        d = self.coordinator.data or {}
+        return {
+            "name": d.get("name"),
+            "isin": d.get("isin"),
+            "currency": d.get("currency"),
+            "exchange": d.get("exchange"),
+            "last_update": d.get("last_update"),
+            "change_percent": d.get("change_percent"),
+            "change_absolute": d.get("change_absolute"),
+            "dividend_yield": d.get("dividend_yield"),
+            "dividend_per_share": d.get("dividend_per_share"),
+            "price_earnings_ratio": d.get("price_earnings_ratio"),
+            "market_capitalization": d.get("market_capitalization"),
+            "market_cap_currency": d.get("market_cap_currency"),
+            "52w_low": d.get("52w_low"),
+            "52w_high": d.get("52w_high"),
+        }
 
     @property
     def available(self) -> bool:
@@ -236,12 +238,8 @@ class INGStockValueSensor(INGStockBaseSensor):
 
     @property
     def icon(self) -> str | None:
-        d = self.coordinator.data or {}
-
-        if self.key == "price":
-            return "mdi:chart-line"
-
         if self.key in ("change_percent", "change_absolute"):
+            d = self.coordinator.data or {}
             v = _safe_float(d.get(self.key))
             if v is None:
                 return "mdi:trending-neutral"
@@ -250,45 +248,14 @@ class INGStockValueSensor(INGStockBaseSensor):
             if v < 0:
                 return "mdi:trending-down"
             return "mdi:trending-neutral"
-
-        if self.key == "dividend_yield":
-            return "mdi:cash-percent"
-        if self.key == "dividend_per_share":
-            return "mdi:cash"
-        if self.key == "price_earnings_ratio":
-            return "mdi:calculator-variant"
-        if self.key == "market_capitalization":
-            return "mdi:bank"
-        if self.key in ("52w_low", "52w_high"):
-            return "mdi:arrow-expand-vertical"
-
-        return "mdi:finance"
+        return KEY_TO_ICON.get(self.key, "mdi:finance")
 
     @property
-    def extra_state_attributes(self):
-        d = self.coordinator.data or {}
-        quantity = _get_quantity(self.entry)
-
-        return {
-            "name": d.get("name"),
-            "isin": d.get("isin"),
-            "currency": d.get("currency"),
-            "change_percent": d.get("change_percent"),
-            "change_absolute": d.get("change_absolute"),
-            "exchange": d.get("exchange"),
-            "last_update": d.get("last_update"),
-
-            "dividend_yield": d.get("dividend_yield"),
-            "dividend_per_share": d.get("dividend_per_share"),
-            "price_earnings_ratio": d.get("price_earnings_ratio"),
-            "market_capitalization": d.get("market_capitalization"),
-            "market_cap_currency": d.get("market_cap_currency"),
-            "52w_low": d.get("52w_low"),
-            "52w_high": d.get("52w_high"),
-
-            "instrument_type_selected": self.instrument_type,
-            "quantity": quantity,
-        }
+    def extra_state_attributes(self) -> dict[str, Any]:
+        attrs = self._base_attributes()
+        attrs["instrument_type_selected"] = self.instrument_type
+        attrs["quantity"] = _get_quantity(self.entry)
+        return attrs
 
     @property
     def native_value(self):
@@ -330,16 +297,12 @@ class INGStockTextSensor(INGStockBaseSensor):
         return "mdi:currency-sign"
 
     @property
-    def extra_state_attributes(self):
-        d = self.coordinator.data or {}
+    def extra_state_attributes(self) -> dict[str, Any]:
+        base = self._base_attributes()
         return {
-            "name": d.get("name"),
-            "isin": d.get("isin"),
-            "exchange": d.get("exchange"),
-            "currency": d.get("currency"),
-            "last_update": d.get("last_update"),
-            "instrument_type_selected": self.instrument_type,
-        }
+            k: base[k]
+            for k in ("name", "isin", "exchange", "currency", "last_update")
+        } | {"instrument_type_selected": self.instrument_type}
 
     @property
     def native_value(self):
@@ -370,14 +333,13 @@ class INGStockPositionValueSensor(INGStockBaseSensor):
         return "mdi:briefcase"
 
     @property
-    def extra_state_attributes(self):
+    def extra_state_attributes(self) -> dict[str, Any]:
+        base = self._base_attributes()
         d = self.coordinator.data or {}
         return {
-            "name": d.get("name"),
-            "isin": d.get("isin"),
-            "exchange": d.get("exchange"),
-            "currency": d.get("currency"),
-            "last_update": d.get("last_update"),
+            k: base[k]
+            for k in ("name", "isin", "exchange", "currency", "last_update")
+        } | {
             "instrument_type_selected": self.instrument_type,
             "quantity": _get_quantity(self.entry),
             "unit_price": d.get("price"),

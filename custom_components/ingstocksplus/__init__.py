@@ -7,7 +7,12 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from .const import DOMAIN, CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+from .const import (
+    DOMAIN,
+    CONF_SCAN_INTERVAL,
+    CONF_NAME,
+    DEFAULT_SCAN_INTERVAL,
+)
 from .coordinator import INGStocksCoordinator
 
 PLATFORMS = ["sensor"]
@@ -59,7 +64,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
+    """Apply options to coordinator without full reload (interval/name take effect immediately)."""
+    coordinator: INGStocksCoordinator | None = (hass.data.get(DOMAIN) or {}).get(entry.entry_id)
+    if coordinator is None:
+        return
+    scan_interval_min = int(
+        entry.options.get(CONF_SCAN_INTERVAL, entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
+    )
+    coordinator.update_interval = timedelta(minutes=scan_interval_min)
+    custom_name = entry.options.get(CONF_NAME, entry.data.get(CONF_NAME))
+    if custom_name:
+        coordinator.display_name = custom_name
+    else:
+        coordinator.display_name = (coordinator.data or {}).get("name") or entry.title
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

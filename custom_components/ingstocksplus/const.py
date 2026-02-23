@@ -1,6 +1,12 @@
 # const.py
 DOMAIN = "ingstocksplus"
 
+# ING API (public, unofficial)
+API_BASE_URL = "https://component-api.wertpapiere.ing.de/api/v1"
+API_TIMEOUT = 20
+API_RETRY_ATTEMPTS = 2
+API_RETRY_DELAY_SEC = 5
+
 CONF_ISIN = "isin"
 CONF_NAME = "name"
 CONF_SCAN_INTERVAL = "scan_interval"
