@@ -11,6 +11,7 @@ build/
 # Virtualenvs
 .venv/
 venv/
+.env/
 
 # Editors / IDEs
 .vscode/
@@ -22,3 +23,10 @@ Thumbs.db
 
 # Home Assistant / HACS noise (optional)
 .cache/
+
+# Tests / tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.mypy_cache/

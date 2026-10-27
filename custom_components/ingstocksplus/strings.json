@@ -3,25 +3,34 @@
     "step": {
       "user": {
         "title": "ING Stocks Plus",
-        "description": "Add an ISIN to track price and optional key figures.",
+        "description": "Add an ISIN to track price and optional key figures. Instrument type is a display label only.",
         "data": {
           "isin": "ISIN",
           "name": "Name (optional)",
           "scan_interval": "Update interval (minutes)",
-          "instrument_type": "Instrument type",
+          "instrument_type": "Instrument type (display only)",
           "quantity": "Quantity (shares/units)"
         }
       }
+    },
+    "error": {
+      "invalid_isin": "Invalid ISIN format (expected 12 characters, e.g. IE00B3RBWM25).",
+      "isin_not_found": "ISIN not found in the ING instrument API.",
+      "cannot_connect": "Could not reach the ING instrument API. Try again later."
+    },
+    "abort": {
+      "already_configured": "This ISIN is already configured."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Options",
+        "description": "Instrument type is a display label only and does not change API behaviour.",
         "data": {
           "name": "Name (optional)",
           "scan_interval": "Update interval (minutes)",
-          "instrument_type": "Instrument type",
+          "instrument_type": "Instrument type (display only)",
           "quantity": "Quantity (shares/units)"
         }
       }
@@ -30,10 +39,26 @@
   "selector": {
     "instrument_type": {
       "options": {
-        "auto": "Automatic detection",
+        "auto": "Automatic / unspecified",
         "etf": "ETF / Fund",
         "stock": "Stock / Share"
       }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "price": { "name": "Price" },
+      "change_percent": { "name": "Change %" },
+      "change_absolute": { "name": "Change" },
+      "last_update": { "name": "Last update" },
+      "position_value": { "name": "Position value" },
+      "dividend_yield": { "name": "Dividend yield" },
+      "dividend_per_share": { "name": "Dividend per share" },
+      "price_earnings_ratio": { "name": "P/E ratio" },
+      "market_capitalization": { "name": "Market capitalization" },
+      "fifty_two_week_low": { "name": "52-week low" },
+      "fifty_two_week_high": { "name": "52-week high" },
+      "market_cap_currency": { "name": "Market cap currency" }
     }
   }
 }
