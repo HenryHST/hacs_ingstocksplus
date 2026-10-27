@@ -10,26 +10,22 @@ from homeassistant.helpers.selector import (
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
-    SelectSelector,
-    SelectSelectorConfig,
-    SelectSelectorMode,
     TextSelector,
 )
 
 from .api import INGApiError, async_fetch_instrument_header, normalize_isin
 from .const import (
-    CONF_INSTRUMENT_TYPE,
     CONF_ISIN,
+    CONF_MARKET_HOURS_POLLING,
     CONF_NAME,
     CONF_QUANTITY,
     CONF_SCAN_INTERVAL,
     CONF_YAHOO_FALLBACK,
+    DEFAULT_MARKET_HOURS_POLLING,
     DEFAULT_QUANTITY,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_YAHOO_FALLBACK,
     DOMAIN,
-    INSTRUMENT_TYPE_AUTO,
-    INSTRUMENT_TYPE_OPTIONS,
 )
 
 
@@ -38,9 +34,9 @@ def _user_schema(
     isin: str | None = None,
     name: str = "",
     scan_interval: int = DEFAULT_SCAN_INTERVAL,
-    instrument_type: str = INSTRUMENT_TYPE_AUTO,
     quantity: float = DEFAULT_QUANTITY,
     yahoo_fallback: bool = DEFAULT_YAHOO_FALLBACK,
+    market_hours_polling: bool = DEFAULT_MARKET_HOURS_POLLING,
     include_isin: bool = True,
 ) -> vol.Schema:
     fields: dict = {}
@@ -50,17 +46,14 @@ def _user_schema(
     fields[vol.Required(CONF_SCAN_INTERVAL, default=scan_interval)] = NumberSelector(
         NumberSelectorConfig(min=1, max=360, mode=NumberSelectorMode.BOX, step=1)
     )
-    fields[vol.Required(CONF_INSTRUMENT_TYPE, default=instrument_type)] = SelectSelector(
-        SelectSelectorConfig(
-            options=INSTRUMENT_TYPE_OPTIONS,
-            mode=SelectSelectorMode.DROPDOWN,
-            translation_key=CONF_INSTRUMENT_TYPE,
-        )
-    )
+    # HA NumberSelector step must be "any" or >= 0.001 (not 0.0001).
     fields[vol.Optional(CONF_QUANTITY, default=quantity)] = NumberSelector(
-        NumberSelectorConfig(min=0, mode=NumberSelectorMode.BOX, step=0.0001)
+        NumberSelectorConfig(min=0, mode=NumberSelectorMode.BOX, step="any")
     )
     fields[vol.Optional(CONF_YAHOO_FALLBACK, default=yahoo_fallback)] = BooleanSelector()
+    fields[vol.Optional(CONF_MARKET_HOURS_POLLING, default=market_hours_polling)] = (
+        BooleanSelector()
+    )
     return vol.Schema(fields)
 
 
@@ -91,12 +84,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     scan_interval = int(
                         user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
                     )
-                    instrument_type = user_input.get(
-                        CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO
-                    )
                     quantity = float(user_input.get(CONF_QUANTITY, DEFAULT_QUANTITY))
                     yahoo_fallback = bool(
                         user_input.get(CONF_YAHOO_FALLBACK, DEFAULT_YAHOO_FALLBACK)
+                    )
+                    market_hours_polling = bool(
+                        user_input.get(
+                            CONF_MARKET_HOURS_POLLING, DEFAULT_MARKET_HOURS_POLLING
+                        )
                     )
 
                     await self.async_set_unique_id(f"{DOMAIN}_{isin}")
@@ -109,9 +104,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_ISIN: isin,
                             CONF_NAME: name,
                             CONF_SCAN_INTERVAL: scan_interval,
-                            CONF_INSTRUMENT_TYPE: instrument_type,
                             CONF_QUANTITY: quantity,
                             CONF_YAHOO_FALLBACK: yahoo_fallback,
+                            CONF_MARKET_HOURS_POLLING: market_hours_polling,
                         },
                     )
 
@@ -123,12 +118,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 scan_interval=int(
                     (user_input or {}).get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
                 ),
-                instrument_type=(user_input or {}).get(
-                    CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO
-                ),
                 quantity=float((user_input or {}).get(CONF_QUANTITY, DEFAULT_QUANTITY)),
                 yahoo_fallback=bool(
                     (user_input or {}).get(CONF_YAHOO_FALLBACK, DEFAULT_YAHOO_FALLBACK)
+                ),
+                market_hours_polling=bool(
+                    (user_input or {}).get(
+                        CONF_MARKET_HOURS_POLLING, DEFAULT_MARKET_HOURS_POLLING
+                    )
                 ),
             ),
             errors=errors,
@@ -140,7 +137,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class OptionsFlowHandler(config_entries.OptionsFlowWithConfigEntry):
-    """Options flow for name, interval, display type, quantity, and Yahoo fallback."""
+    """Options flow for name, interval, quantity, Yahoo, and market-hours polling."""
 
     async def async_step_init(self, user_input=None) -> FlowResult:
         entry = self.config_entry
@@ -148,19 +145,21 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithConfigEntry):
         if user_input is not None:
             name = (user_input.get(CONF_NAME) or "").strip()
             scan_interval = int(user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
-            instrument_type = user_input.get(CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO)
             quantity = float(user_input.get(CONF_QUANTITY, DEFAULT_QUANTITY))
             yahoo_fallback = bool(
                 user_input.get(CONF_YAHOO_FALLBACK, DEFAULT_YAHOO_FALLBACK)
+            )
+            market_hours_polling = bool(
+                user_input.get(CONF_MARKET_HOURS_POLLING, DEFAULT_MARKET_HOURS_POLLING)
             )
             return self.async_create_entry(
                 title="",
                 data={
                     CONF_NAME: name,
                     CONF_SCAN_INTERVAL: scan_interval,
-                    CONF_INSTRUMENT_TYPE: instrument_type,
                     CONF_QUANTITY: quantity,
                     CONF_YAHOO_FALLBACK: yahoo_fallback,
+                    CONF_MARKET_HOURS_POLLING: market_hours_polling,
                 },
             )
 
@@ -173,10 +172,6 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithConfigEntry):
         current_name = str(
             entry.options.get(CONF_NAME, entry.data.get(CONF_NAME, "")) or ""
         )
-        current_type = entry.options.get(
-            CONF_INSTRUMENT_TYPE,
-            entry.data.get(CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO),
-        )
         current_quantity = float(
             entry.options.get(
                 CONF_QUANTITY, entry.data.get(CONF_QUANTITY, DEFAULT_QUANTITY)
@@ -188,15 +183,21 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithConfigEntry):
                 entry.data.get(CONF_YAHOO_FALLBACK, DEFAULT_YAHOO_FALLBACK),
             )
         )
+        current_market = bool(
+            entry.options.get(
+                CONF_MARKET_HOURS_POLLING,
+                entry.data.get(CONF_MARKET_HOURS_POLLING, DEFAULT_MARKET_HOURS_POLLING),
+            )
+        )
 
         return self.async_show_form(
             step_id="init",
             data_schema=_user_schema(
                 name=current_name,
                 scan_interval=current_interval,
-                instrument_type=current_type,
                 quantity=current_quantity,
                 yahoo_fallback=current_yahoo,
+                market_hours_polling=current_market,
                 include_isin=False,
             ),
         )

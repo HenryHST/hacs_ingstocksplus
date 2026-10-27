@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  release_zip:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build integration zip
+        run: |
+          mkdir -p /tmp/ingstocksplus_build
+          cp -R custom_components/ingstocksplus /tmp/ingstocksplus_build/
+          cd /tmp/ingstocksplus_build
+          zip -r ingstocksplus.zip ingstocksplus
+
+      - name: Upload zip to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: /tmp/ingstocksplus_build/ingstocksplus.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

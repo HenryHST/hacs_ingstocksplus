@@ -27,10 +27,23 @@ class _Subscriptable:
         return cls
 
 
+class _FakeCoordinator(_Subscriptable):
+    """Minimal DataUpdateCoordinator stand-in for unit tests."""
+
+    def __init__(self, hass, logger, *, name=None, update_interval=None, **_kwargs):
+        self.hass = hass
+        self.logger = logger
+        self.name = name
+        self.update_interval = update_interval
+        self.data = None
+        self.last_update_success = True
+
+
 def pytest_configure() -> None:
     """Provide minimal homeassistant stubs when the package is not installed."""
     try:
-        import homeassistant  # noqa: F401
+        from homeassistant.core import HomeAssistant, ServiceCall  # noqa: F401
+
         return
     except ImportError:
         pass
@@ -40,6 +53,7 @@ def pytest_configure() -> None:
 
     core = _ensure_module("homeassistant.core")
     core.HomeAssistant = MagicMock  # type: ignore[attr-defined]
+    core.ServiceCall = MagicMock  # type: ignore[attr-defined]
 
     helpers = _ensure_module("homeassistant.helpers")
     helpers.__path__ = []  # type: ignore[attr-defined]
@@ -48,7 +62,7 @@ def pytest_configure() -> None:
     aiohttp_client.async_get_clientsession = MagicMock()  # type: ignore[attr-defined]
 
     update_coordinator = _ensure_module("homeassistant.helpers.update_coordinator")
-    update_coordinator.DataUpdateCoordinator = _Subscriptable  # type: ignore[attr-defined]
+    update_coordinator.DataUpdateCoordinator = _FakeCoordinator  # type: ignore[attr-defined]
     update_coordinator.UpdateFailed = Exception  # type: ignore[attr-defined]
     update_coordinator.CoordinatorEntity = _Subscriptable  # type: ignore[attr-defined]
 
@@ -60,12 +74,14 @@ def pytest_configure() -> None:
 
     exceptions = _ensure_module("homeassistant.exceptions")
     exceptions.ConfigEntryNotReady = Exception  # type: ignore[attr-defined]
+    exceptions.HomeAssistantError = Exception  # type: ignore[attr-defined]
 
     data_entry_flow = _ensure_module("homeassistant.data_entry_flow")
     data_entry_flow.FlowResult = dict  # type: ignore[attr-defined]
 
     selector = _ensure_module("homeassistant.helpers.selector")
     for name in (
+        "BooleanSelector",
         "NumberSelector",
         "NumberSelectorConfig",
         "NumberSelectorMode",
@@ -75,6 +91,12 @@ def pytest_configure() -> None:
         "TextSelector",
     ):
         setattr(selector, name, MagicMock)
+
+    cv = _ensure_module("homeassistant.helpers.config_validation")
+    cv.string = str  # type: ignore[attr-defined]
+
+    entity_registry = _ensure_module("homeassistant.helpers.entity_registry")
+    entity_registry.async_get = MagicMock()  # type: ignore[attr-defined]
 
     components = _ensure_module("homeassistant.components")
     components.__path__ = []  # type: ignore[attr-defined]

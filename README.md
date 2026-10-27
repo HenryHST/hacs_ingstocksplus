@@ -14,16 +14,25 @@ but has been **completely rebuilt and extended** with modern Home Assistant best
 - Fetch **stock & ETF prices** by ISIN (ING `instrument-header`)
 - **Configurable scan interval** per instrument (changeable later via Options)
 - **Quantity** option with calculated **position value** (`price × quantity`; set quantity **> 0**)
-- **Instrument type** as a display label only (auto / ETF / stock) — does not change API behaviour
 - Key figures from ING (`share/keyfigures`) when available:
   - P/E ratio (KGV)
   - Market capitalization
   - 52-week high / low
-- Optional **Yahoo Finance fallback** (no API key) to fill missing **dividend per share** / **dividend yield** (via chart dividend events); **P/E** primarily from ING
+- Optional **Yahoo Finance fallback** (no API key) for missing **dividend** fields (chart events); **P/E only from ING** (Yahoo chart has no P/E; no API-key providers)
+- **Portfolio total** sensor summing position values (same currency; mismatches flagged)
+- Optional **market-hours polling** (slower updates when Xetra and US sessions are closed)
+- Service `ingstocksplus.refresh` for manual updates; config-entry **diagnostics**
+- Parallel ING fetches, Yahoo symbol cache (24h), per-entry poll jitter (0–30s)
 - Material Design icons (dynamic up/down for price changes)
 - Efficient polling via **DataUpdateCoordinator**
 - Works with **ApexCharts Card**
-- HACS-ready
+- HACS-ready (`zip_release`)
+
+---
+
+## Documentation
+
+- German overview with architecture diagrams: [docs/uebersicht.md](docs/uebersicht.md)
 
 ---
 
@@ -50,9 +59,9 @@ but has been **completely rebuilt and extended** with modern Home Assistant best
    - **ISIN** (required; validated against the ING API)
    - **Name** (optional; defaults to the instrument name from the API)
    - **Scan interval** (minutes)
-   - **Instrument type** (display only): Automatic / ETF / Stock
    - **Quantity** (shares/units; **must be > 0** for a meaningful position value)
-   - **Yahoo Finance fallback** (default on): fills missing dividend / P/E
+   - **Yahoo Finance fallback** (default on): fills missing dividends (not P/E)
+   - **Market-hours polling** (optional): use a longer interval outside Xetra/US hours
 
 > Example ISIN: `IE00B3RBWM25`
 
@@ -63,11 +72,15 @@ but has been **completely rebuilt and extended** with modern Home Assistant best
 Open the integration options to change:
 - Display name
 - Scan interval
-- Instrument type (display only)
 - Quantity (set **> 0** to enable position value)
 - Yahoo Finance fallback
+- Market-hours polling
 
 Changes reload the integration so sensors (including position value) stay in sync.
+
+### Service
+
+- `ingstocksplus.refresh` — refresh all instruments, or filter with optional `entry_id` / `isin`
 
 ---
 
@@ -82,6 +95,7 @@ The following sensors are created **per ISIN**. Key-figure sensors stay register
 | `change_absolute` | Absolute price change |
 | `last_update` | Timestamp of last update (diagnostic) |
 | `position_value` | `price × quantity` (`unknown` when quantity is 0) |
+| `portfolio_total` | Sum of position values (shared device; same-currency only) |
 | `dividend_yield` | Dividend yield (ING and/or Yahoo) |
 | `dividend_per_share` | Dividend per share (often via Yahoo) |
 | `price_earnings_ratio` | P/E ratio / KGV |
@@ -125,6 +139,8 @@ series:
 
 - Not all instruments provide key figures (price updates still succeed if key figures fail)
 - ETFs often have no ING key figures; Yahoo may still provide dividend data when available
+- **P/E (KGV)** is not filled from Yahoo (chart API has no PE); empty PE for ETFs is expected
+- Portfolio total uses the dominant currency; other-currency positions appear under `excluded` with `currency_mismatch`
 - Yahoo Finance is **unofficial** (chart/search only; quote APIs may require auth) and may change without notice
 - Scan intervals should be chosen responsibly (recommended: **5–30 minutes**)
 - The integration uses an **unofficial public API** and is **not affiliated with ING**
@@ -148,6 +164,19 @@ https://github.com/Sundancer78/hacs_ingstocksplus/issues
 ---
 
 ## Changelog
+
+### 1.4.0
+- Portfolio total sensor across all entries (currency mismatch attributes)
+- Optional market-hours polling (Xetra / US sessions)
+- Document P/E as ING-only (no Yahoo PE / no API-key providers)
+- Config-entry diagnostics and `ingstocksplus.refresh` service
+- Extra unit tests; HACS `zip_release` + GitHub release workflow
+
+### 1.3.3
+- Cache Yahoo ISIN→symbol lookups for 24h in `hass.data`
+- Fetch ING header and keyfigures in parallel (header still hard-fails)
+- Remove `instrument_type` from config/options UI (legacy values still readable)
+- Add per-entry poll jitter (0–30s) to stagger updates
 
 ### 1.3.2
 - Switch ING keyfigures to `/share/keyfigures/{isin}`

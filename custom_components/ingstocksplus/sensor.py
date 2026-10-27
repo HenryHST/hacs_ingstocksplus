@@ -11,6 +11,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -19,12 +20,11 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_INSTRUMENT_TYPE,
     CONF_NAME,
-    CONF_QUANTITY,
-    DEFAULT_QUANTITY,
+    DATA_PORTFOLIO_ADDED,
     DOMAIN,
-    INSTRUMENT_TYPE_AUTO,
 )
 from .coordinator import INGStocksCoordinator
+from .helpers import compute_portfolio_summary, entry_quantity, iter_coordinators
 
 KEY_TO_ICON: dict[str, str] = {
     "price": "mdi:chart-line",
@@ -66,19 +66,18 @@ def _safe_float(v: Any) -> float | None:
 
 
 def _get_quantity(entry: ConfigEntry) -> float:
-    q = entry.options.get(CONF_QUANTITY, entry.data.get(CONF_QUANTITY, DEFAULT_QUANTITY))
-    try:
-        qf = float(q)
-        return qf if qf >= 0 else 0.0
-    except (TypeError, ValueError):
-        return 0.0
+    return entry_quantity(entry)
 
 
-def _get_instrument_type(entry: ConfigEntry) -> str:
-    return entry.options.get(
+def _get_instrument_type(entry: ConfigEntry) -> str | None:
+    """Legacy display attribute only; field removed from config/options UI."""
+    value = entry.options.get(
         CONF_INSTRUMENT_TYPE,
-        entry.data.get(CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO),
+        entry.data.get(CONF_INSTRUMENT_TYPE),
     )
+    if value is None or value == "":
+        return None
+    return str(value)
 
 
 def _currency_unit(coordinator: INGStocksCoordinator) -> str | None:
@@ -160,6 +159,16 @@ async def async_setup_entry(
         )
     )
 
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    portfolio_uid = f"{DOMAIN}_portfolio_total"
+    registry = er.async_get(hass)
+    if (
+        not domain_data.get(DATA_PORTFOLIO_ADDED)
+        and registry.async_get_entity_id("sensor", DOMAIN, portfolio_uid) is None
+    ):
+        sensors.append(INGPortfolioTotalSensor(hass))
+        domain_data[DATA_PORTFOLIO_ADDED] = True
+
     async_add_entities(sensors)
 
 
@@ -172,13 +181,15 @@ class INGStockBaseSensor(CoordinatorEntity[INGStocksCoordinator], SensorEntity):
 
     def _identity_attributes(self) -> dict[str, Any]:
         d = self.coordinator.data or {}
-        attrs = {
+        attrs: dict[str, Any] = {
             "isin": d.get("isin"),
             "exchange": d.get("exchange"),
             "currency": d.get("currency"),
-            "instrument_type": _get_instrument_type(self.entry),
             "keyfigures_source": d.get("keyfigures_source"),
         }
+        instrument_type = _get_instrument_type(self.entry)
+        if instrument_type is not None:
+            attrs["instrument_type"] = instrument_type
         if d.get("yahoo_symbol"):
             attrs["yahoo_symbol"] = d.get("yahoo_symbol")
         return attrs
@@ -359,3 +370,92 @@ class INGStockLastUpdateSensor(INGStockBaseSensor):
             return None
         dt = dt_util.parse_datetime(raw)
         return dt_util.as_utc(dt) if dt else None
+
+
+class INGPortfolioTotalSensor(SensorEntity):
+    """Sum of position values across all ING Stocks Plus entries (same currency)."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "portfolio_total"
+    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_state_class = None
+    _attr_icon = "mdi:finance"
+    _attr_unique_id = f"{DOMAIN}_portfolio_total"
+    _attr_should_poll = False
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.hass = hass
+        self._unsubs: list[Any] = []
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "portfolio")},
+            "name": "ING Stocks Plus Portfolio",
+            "manufacturer": "ING Stocks Plus",
+            "model": "portfolio",
+        }
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._attach_listeners()
+
+    async def async_will_remove_from_hass(self) -> None:
+        for unsub in self._unsubs:
+            unsub()
+        self._unsubs.clear()
+        self.hass.data.get(DOMAIN, {}).pop(DATA_PORTFOLIO_ADDED, None)
+        await super().async_will_remove_from_hass()
+
+    def _attach_listeners(self) -> None:
+        for unsub in self._unsubs:
+            unsub()
+        self._unsubs = []
+        for _, coordinator in iter_coordinators(self.hass):
+            self._unsubs.append(
+                coordinator.async_add_listener(self._handle_coordinator_update)
+            )
+
+    def _handle_coordinator_update(self) -> None:
+        # New entries may appear after this entity was created
+        if len(self._unsubs) != len(iter_coordinators(self.hass)):
+            self._attach_listeners()
+        self.async_write_ha_state()
+
+    @property
+    def available(self) -> bool:
+        return bool(iter_coordinators(self.hass))
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        return compute_portfolio_summary(self.hass).get("currency")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        summary = compute_portfolio_summary(self.hass)
+        return {
+            "currency_mismatch": summary.get("currency_mismatch"),
+            "position_count": summary.get("position_count"),
+            "included": [
+                {
+                    "isin": p.get("isin"),
+                    "name": p.get("name"),
+                    "value": p.get("value"),
+                    "currency": p.get("currency"),
+                }
+                for p in summary.get("included") or []
+            ],
+            "excluded": [
+                {
+                    "isin": p.get("isin"),
+                    "name": p.get("name"),
+                    "value": p.get("value"),
+                    "currency": p.get("currency"),
+                }
+                for p in summary.get("excluded") or []
+            ],
+        }
+
+    @property
+    def native_value(self):
+        return compute_portfolio_summary(self.hass).get("total")

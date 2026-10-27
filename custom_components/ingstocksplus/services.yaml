@@ -1,0 +1,16 @@
+refresh:
+  name: Refresh
+  description: Manually refresh one or all ING Stocks Plus instruments.
+  fields:
+    entry_id:
+      name: Config entry ID
+      description: Optional. Refresh only this config entry.
+      example: "01JABC..."
+      selector:
+        text:
+    isin:
+      name: ISIN
+      description: Optional. Refresh only the instrument with this ISIN.
+      example: "IE00B3RBWM25"
+      selector:
+        text:

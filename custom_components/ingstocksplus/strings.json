@@ -3,14 +3,14 @@
     "step": {
       "user": {
         "title": "ING Stocks Plus",
-        "description": "Add an ISIN to track price and optional key figures. Set quantity > 0 for position value. Instrument type is display-only.",
+        "description": "Add an ISIN to track price and optional key figures. Set quantity > 0 for position value. P/E comes from ING when available (Yahoo chart has no P/E).",
         "data": {
           "isin": "ISIN",
           "name": "Name (optional)",
           "scan_interval": "Update interval (minutes)",
-          "instrument_type": "Instrument type (display only)",
           "quantity": "Quantity (shares/units; >0 enables position value)",
-          "yahoo_fallback": "Yahoo Finance fallback for dividend / P/E"
+          "yahoo_fallback": "Yahoo Finance fallback for dividend (not P/E)",
+          "market_hours_polling": "Slower polling outside Xetra/US market hours"
         }
       }
     },
@@ -27,23 +27,14 @@
     "step": {
       "init": {
         "title": "Options",
-        "description": "Set quantity > 0 to populate the position value sensor. Yahoo fallback fills missing dividend/P/E when ING has no data.",
+        "description": "Set quantity > 0 to populate the position value sensor. Yahoo fills missing dividends when ING has no data. Market-hours mode uses a longer interval when Xetra and US markets are closed.",
         "data": {
           "name": "Name (optional)",
           "scan_interval": "Update interval (minutes)",
-          "instrument_type": "Instrument type (display only)",
           "quantity": "Quantity (shares/units; >0 enables position value)",
-          "yahoo_fallback": "Yahoo Finance fallback for dividend / P/E"
+          "yahoo_fallback": "Yahoo Finance fallback for dividend (not P/E)",
+          "market_hours_polling": "Slower polling outside Xetra/US market hours"
         }
-      }
-    }
-  },
-  "selector": {
-    "instrument_type": {
-      "options": {
-        "auto": "Automatic / unspecified",
-        "etf": "ETF / Fund",
-        "stock": "Stock / Share"
       }
     }
   },
@@ -54,6 +45,7 @@
       "change_absolute": { "name": "Change" },
       "last_update": { "name": "Last update" },
       "position_value": { "name": "Position value" },
+      "portfolio_total": { "name": "Portfolio total" },
       "dividend_yield": { "name": "Dividend yield" },
       "dividend_per_share": { "name": "Dividend per share" },
       "price_earnings_ratio": { "name": "P/E ratio" },

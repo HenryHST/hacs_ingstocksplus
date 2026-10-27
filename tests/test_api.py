@@ -7,14 +7,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from custom_components.ingstocksplus.api import (
+    YAHOO_SYMBOL_CACHE_KEY,
     INGApiError,
     async_fetch_instrument_header,
     async_fetch_keyfigures,
     async_fetch_yahoo_keyfigures,
+    async_resolve_yahoo_symbol,
     map_instrument_data,
     merge_keyfigures_with_yahoo,
     normalize_isin,
 )
+from custom_components.ingstocksplus.const import DOMAIN
+from custom_components.ingstocksplus.helpers import poll_jitter_seconds
 
 
 def test_normalize_isin_valid() -> None:
@@ -261,3 +265,37 @@ def test_position_value_math() -> None:
     price = 100.123
     quantity = 2.5
     assert round(price * quantity, 2) == 250.31
+
+
+def test_poll_jitter_is_stable_and_bounded() -> None:
+    a = poll_jitter_seconds("entry-abc")
+    b = poll_jitter_seconds("entry-abc")
+    c = poll_jitter_seconds("entry-xyz")
+    assert a == b
+    assert 0 <= a <= 30
+    assert 0 <= c <= 30
+
+
+@pytest.mark.asyncio
+async def test_yahoo_symbol_cache_hits_search_once() -> None:
+    session = MagicMock()
+    session.get = MagicMock(
+        return_value=_mock_response(
+            200,
+            {"quotes": [{"symbol": "AAPL", "quoteType": "EQUITY", "isin": "US0378331005"}]},
+        )
+    )
+    hass = MagicMock()
+    hass.data = {}
+
+    with patch(
+        "custom_components.ingstocksplus.api.async_get_clientsession",
+        return_value=session,
+    ):
+        first = await async_resolve_yahoo_symbol(hass, "US0378331005")
+        second = await async_resolve_yahoo_symbol(hass, "US0378331005")
+
+    assert first == "AAPL"
+    assert second == "AAPL"
+    assert session.get.call_count == 1
+    assert "US0378331005" in hass.data[DOMAIN][YAHOO_SYMBOL_CACHE_KEY]

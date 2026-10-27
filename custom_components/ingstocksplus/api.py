@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -11,7 +12,13 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import API_BASE_URL, API_TIMEOUT
+from .const import (
+    API_BASE_URL,
+    API_TIMEOUT,
+    DATA_YAHOO_CACHE,
+    DOMAIN,
+    YAHOO_SYMBOL_CACHE_TTL_SEC,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,6 +30,10 @@ YAHOO_HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Accept": "application/json",
 }
+
+# Alias kept for tests
+YAHOO_SYMBOL_CACHE_KEY = DATA_YAHOO_CACHE
+_CACHE_MISS = object()
 
 
 class INGApiError(Exception):
@@ -143,19 +154,68 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
+def _yahoo_symbol_cache(hass: HomeAssistant) -> dict[str, dict[str, Any]]:
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    cache = domain_data.get(YAHOO_SYMBOL_CACHE_KEY)
+    if not isinstance(cache, dict):
+        cache = {}
+        domain_data[YAHOO_SYMBOL_CACHE_KEY] = cache
+    return cache
+
+
+def _cache_get_yahoo_symbol(hass: HomeAssistant, isin: str) -> Any:
+    """Return cached symbol, None (cached empty), or _CACHE_MISS if absent/expired."""
+    entry = _yahoo_symbol_cache(hass).get(isin.upper())
+    if not isinstance(entry, dict):
+        return _CACHE_MISS
+    expires = entry.get("expires")
+    if not isinstance(expires, (int, float)) or expires <= time.time():
+        return _CACHE_MISS
+    symbol = entry.get("symbol")
+    return str(symbol) if symbol else None
+
+
+def _cache_set_yahoo_symbol(
+    hass: HomeAssistant,
+    isin: str,
+    symbol: str | None,
+    *,
+    ttl_sec: int = YAHOO_SYMBOL_CACHE_TTL_SEC,
+) -> None:
+    _yahoo_symbol_cache(hass)[isin.upper()] = {
+        "symbol": symbol,
+        "expires": time.time() + ttl_sec,
+    }
+
+
 async def async_resolve_yahoo_symbol(
     hass: HomeAssistant,
     isin: str,
+    *,
+    use_cache: bool = True,
 ) -> str | None:
-    """Resolve ISIN to a Yahoo Finance symbol via unofficial search."""
+    """Resolve ISIN to a Yahoo Finance symbol via unofficial search.
+
+    Results (including negative lookups) are cached in hass.data for
+    YAHOO_SYMBOL_CACHE_TTL_SEC to reduce search traffic and rate limits.
+    """
+    if use_cache:
+        cached = _cache_get_yahoo_symbol(hass, isin)
+        if cached is not _CACHE_MISS:
+            return cached
+
     session = _session(hass)
     url = f"{YAHOO_SEARCH_URL}?q={quote(isin)}&quotesCount=5&newsCount=0"
+    symbol: str | None = None
     try:
         async with session.get(
             url, headers=YAHOO_HEADERS, timeout=_client_timeout()
         ) as resp:
             if resp.status != 200:
                 _LOGGER.debug("Yahoo search HTTP %s for %s", resp.status, isin)
+                if use_cache:
+                    # Do not cache hard failures long; short negative avoid hammering
+                    _cache_set_yahoo_symbol(hass, isin, None, ttl_sec=300)
                 return None
             payload = await resp.json()
     except (aiohttp.ClientError, TimeoutError, OSError) as err:
@@ -163,27 +223,32 @@ async def async_resolve_yahoo_symbol(
         return None
 
     quotes = payload.get("quotes") if isinstance(payload, dict) else None
-    if not isinstance(quotes, list):
-        return None
+    if isinstance(quotes, list):
+        isin_upper = isin.upper()
+        for quote_item in quotes:
+            if not isinstance(quote_item, dict):
+                continue
+            candidate = quote_item.get("symbol")
+            if not candidate:
+                continue
+            if str(quote_item.get("isin") or "").upper() == isin_upper:
+                symbol = str(candidate)
+                break
+            # Prefer equity/ETF quotes when ISIN field is absent
+            quote_type = str(quote_item.get("quoteType") or "").upper()
+            if quote_type in {"EQUITY", "ETF", "MUTUALFUND"}:
+                symbol = str(candidate)
+                break
 
-    isin_upper = isin.upper()
-    for quote_item in quotes:
-        if not isinstance(quote_item, dict):
-            continue
-        symbol = quote_item.get("symbol")
-        if not symbol:
-            continue
-        if str(quote_item.get("isin") or "").upper() == isin_upper:
-            return str(symbol)
-        # Prefer equity/ETF quotes when ISIN field is absent
-        quote_type = str(quote_item.get("quoteType") or "").upper()
-        if quote_type in {"EQUITY", "ETF", "MUTUALFUND"}:
-            return str(symbol)
+        if symbol is None:
+            for quote_item in quotes:
+                if isinstance(quote_item, dict) and quote_item.get("symbol"):
+                    symbol = str(quote_item["symbol"])
+                    break
 
-    for quote_item in quotes:
-        if isinstance(quote_item, dict) and quote_item.get("symbol"):
-            return str(quote_item["symbol"])
-    return None
+    if use_cache:
+        _cache_set_yahoo_symbol(hass, isin, symbol)
+    return symbol
 
 
 async def async_fetch_yahoo_keyfigures(
