@@ -1,7 +1,7 @@
 {
   "domain": "ingstocksplus",
   "name": "ING Stocks Plus",
-  "version": "1.3.0",
+  "version": "1.3.2",
   "documentation": "https://github.com/Sundancer78/hacs_ingstocksplus",
   "requirements": [],
   "dependencies": [],

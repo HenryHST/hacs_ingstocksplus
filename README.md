@@ -1,7 +1,7 @@
 # ING Stocks Plus
 
 **ING Stocks Plus** is a custom Home Assistant integration to fetch **stock and ETF data by ISIN**
-using ING’s public instrument API.
+using ING’s public instrument API, with an optional Yahoo Finance fallback for missing key figures.
 
 The integration is inspired by the original *ING Stocks* integration by **RalfEs73**,
 but has been **completely rebuilt and extended** with modern Home Assistant best practices
@@ -11,15 +11,15 @@ but has been **completely rebuilt and extended** with modern Home Assistant best
 
 ## Features
 
-- Fetch **stock & ETF prices** by ISIN
+- Fetch **stock & ETF prices** by ISIN (ING `instrument-header`)
 - **Configurable scan interval** per instrument (changeable later via Options)
-- **Quantity** option with calculated **position value** sensor
+- **Quantity** option with calculated **position value** (`price × quantity`; set quantity **> 0**)
 - **Instrument type** as a display label only (auto / ETF / stock) — does not change API behaviour
-- Key figures when the API provides them:
-  - Dividend yield / dividend per share
-  - P/E ratio
+- Key figures from ING (`share/keyfigures`) when available:
+  - P/E ratio (KGV)
   - Market capitalization
   - 52-week high / low
+- Optional **Yahoo Finance fallback** (no API key) to fill missing **dividend per share** / **dividend yield** (via chart dividend events); **P/E** primarily from ING
 - Material Design icons (dynamic up/down for price changes)
 - Efficient polling via **DataUpdateCoordinator**
 - Works with **ApexCharts Card**
@@ -51,7 +51,8 @@ but has been **completely rebuilt and extended** with modern Home Assistant best
    - **Name** (optional; defaults to the instrument name from the API)
    - **Scan interval** (minutes)
    - **Instrument type** (display only): Automatic / ETF / Stock
-   - **Quantity** (shares/units; enables a meaningful position value)
+   - **Quantity** (shares/units; **must be > 0** for a meaningful position value)
+   - **Yahoo Finance fallback** (default on): fills missing dividend / P/E
 
 > Example ISIN: `IE00B3RBWM25`
 
@@ -63,7 +64,8 @@ Open the integration options to change:
 - Display name
 - Scan interval
 - Instrument type (display only)
-- Quantity
+- Quantity (set **> 0** to enable position value)
+- Yahoo Finance fallback
 
 Changes reload the integration so sensors (including position value) stay in sync.
 
@@ -71,7 +73,7 @@ Changes reload the integration so sensors (including position value) stay in syn
 
 ## Sensors Created
 
-The following sensors are created **per ISIN**. Key-figure sensors stay registered even when the API returns no key figures (state is then `unknown` / empty).
+The following sensors are created **per ISIN**. Key-figure sensors stay registered even when no key figures are available (state is then `unknown` / empty).
 
 | Sensor | Description |
 |--------|-------------|
@@ -80,13 +82,15 @@ The following sensors are created **per ISIN**. Key-figure sensors stay register
 | `change_absolute` | Absolute price change |
 | `last_update` | Timestamp of last update (diagnostic) |
 | `position_value` | `price × quantity` (`unknown` when quantity is 0) |
-| `dividend_yield` | Dividend yield |
-| `dividend_per_share` | Dividend per share |
-| `price_earnings_ratio` | P/E ratio |
+| `dividend_yield` | Dividend yield (ING and/or Yahoo) |
+| `dividend_per_share` | Dividend per share (often via Yahoo) |
+| `price_earnings_ratio` | P/E ratio / KGV |
 | `market_capitalization` | Market capitalization (diagnostic) |
 | `52w_low` | 52-week low |
 | `52w_high` | 52-week high |
 | `market_cap_currency` | Market-cap currency code (diagnostic) |
+
+Attributes include `keyfigures_source` (`ing` / `yahoo` / `mixed`) and optionally `yahoo_symbol`.
 
 Monetary sensors use the currency sign returned by the API (not hard-coded).
 
@@ -120,6 +124,8 @@ series:
 ## Notes & Limitations
 
 - Not all instruments provide key figures (price updates still succeed if key figures fail)
+- ETFs often have no ING key figures; Yahoo may still provide dividend data when available
+- Yahoo Finance is **unofficial** (chart/search only; quote APIs may require auth) and may change without notice
 - Scan intervals should be chosen responsibly (recommended: **5–30 minutes**)
 - The integration uses an **unofficial public API** and is **not affiliated with ING**
 - Requires Home Assistant **2024.1.0** or newer
@@ -142,6 +148,14 @@ https://github.com/Sundancer78/hacs_ingstocksplus/issues
 ---
 
 ## Changelog
+
+### 1.3.2
+- Switch ING keyfigures to `/share/keyfigures/{isin}`
+- Optional Yahoo Finance fallback for dividend / P/E (config + options)
+- Document quantity requirement for position value
+
+### 1.3.1
+- Switch price endpoint to `/instrument-header?isinOrSearchTerm={isin}`
 
 ### 1.3.0
 - Soft-fail keyfigures so price updates stay available

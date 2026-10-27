@@ -14,7 +14,9 @@ from .api import (
     INGApiError,
     async_fetch_instrument_header,
     async_fetch_keyfigures,
+    async_fetch_yahoo_keyfigures,
     map_instrument_data,
+    merge_keyfigures_with_yahoo,
 )
 from .const import API_RETRY_ATTEMPTS, API_RETRY_DELAY_SEC
 
@@ -27,9 +29,12 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         hass: HomeAssistant,
         isin: str,
         update_interval: timedelta,
+        *,
+        yahoo_fallback: bool = True,
     ) -> None:
         self.isin = isin
         self.display_name: str | None = None
+        self.yahoo_fallback = yahoo_fallback
         super().__init__(
             hass,
             _LOGGER,
@@ -77,11 +82,24 @@ class INGStocksCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not header:
             raise UpdateFailed(f"Fetch error {self.isin}: {last_err}")
 
-        # Soft-fail: keyfigures must never block price updates
         keyfigures, keyfigures_available = await async_fetch_keyfigures(
             self.hass, self.isin
         )
-
-        return map_instrument_data(
-            self.isin, header, keyfigures, keyfigures_available
+        mapped = map_instrument_data(
+            self.isin,
+            header,
+            keyfigures,
+            keyfigures_available,
+            keyfigures_source="ing",
         )
+
+        needs_yahoo = self.yahoo_fallback and (
+            mapped.get("price_earnings_ratio") is None
+            or mapped.get("dividend_per_share") is None
+            or mapped.get("dividend_yield") is None
+        )
+        if needs_yahoo:
+            yahoo = await async_fetch_yahoo_keyfigures(self.hass, self.isin)
+            mapped = merge_keyfigures_with_yahoo(mapped, yahoo)
+
+        return mapped

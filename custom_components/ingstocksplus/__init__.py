@@ -12,13 +12,21 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from .const import (
     CONF_NAME,
     CONF_SCAN_INTERVAL,
+    CONF_YAHOO_FALLBACK,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_YAHOO_FALLBACK,
     DOMAIN,
 )
 from .coordinator import INGStocksCoordinator
 
 PLATFORMS = ["sensor"]
 _LOGGER = logging.getLogger(__name__)
+
+
+def _yahoo_fallback_enabled(entry: ConfigEntry) -> bool:
+    if CONF_YAHOO_FALLBACK in entry.options:
+        return bool(entry.options[CONF_YAHOO_FALLBACK])
+    return bool(entry.data.get(CONF_YAHOO_FALLBACK, DEFAULT_YAHOO_FALLBACK))
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -34,10 +42,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         interval_source = "data"
 
+    yahoo_fallback = _yahoo_fallback_enabled(entry)
+
     coordinator = INGStocksCoordinator(
         hass=hass,
         isin=isin,
         update_interval=timedelta(minutes=scan_interval_min),
+        yahoo_fallback=yahoo_fallback,
     )
 
     try:
@@ -56,10 +67,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator.display_name = (coordinator.data or {}).get("name") or entry.title
 
     _LOGGER.info(
-        "ING Stocks Plus setup: ISIN=%s, scan_interval=%s min (source=%s)",
+        "ING Stocks Plus setup: ISIN=%s, scan_interval=%s min (source=%s), yahoo_fallback=%s",
         isin,
         scan_interval_min,
         interval_source,
+        yahoo_fallback,
     )
 
     entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
@@ -69,7 +81,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload entry so quantity/type/name/interval changes recreate entities cleanly."""
+    """Reload entry so quantity/type/name/interval/fallback changes apply cleanly."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 

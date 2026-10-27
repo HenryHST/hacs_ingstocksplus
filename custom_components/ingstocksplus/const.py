@@ -13,9 +13,11 @@ CONF_NAME = "name"
 CONF_SCAN_INTERVAL = "scan_interval"
 CONF_INSTRUMENT_TYPE = "instrument_type"
 CONF_QUANTITY = "quantity"
+CONF_YAHOO_FALLBACK = "yahoo_fallback"
 
 DEFAULT_SCAN_INTERVAL = 15
 DEFAULT_QUANTITY = 0.0
+DEFAULT_YAHOO_FALLBACK = True
 
 # Display-only label (no API branching); kept for UI/attributes
 INSTRUMENT_TYPE_AUTO = "auto"

@@ -3,13 +3,14 @@
     "step": {
       "user": {
         "title": "ING Stocks Plus",
-        "description": "Add an ISIN to track price and optional key figures. Instrument type is a display label only.",
+        "description": "Add an ISIN to track price and optional key figures. Set quantity > 0 for position value. Instrument type is display-only.",
         "data": {
           "isin": "ISIN",
           "name": "Name (optional)",
           "scan_interval": "Update interval (minutes)",
           "instrument_type": "Instrument type (display only)",
-          "quantity": "Quantity (shares/units)"
+          "quantity": "Quantity (shares/units; >0 enables position value)",
+          "yahoo_fallback": "Yahoo Finance fallback for dividend / P/E"
         }
       }
     },
@@ -26,12 +27,13 @@
     "step": {
       "init": {
         "title": "Options",
-        "description": "Instrument type is a display label only and does not change API behaviour.",
+        "description": "Set quantity > 0 to populate the position value sensor. Yahoo fallback fills missing dividend/P/E when ING has no data.",
         "data": {
           "name": "Name (optional)",
           "scan_interval": "Update interval (minutes)",
           "instrument_type": "Instrument type (display only)",
-          "quantity": "Quantity (shares/units)"
+          "quantity": "Quantity (shares/units; >0 enables position value)",
+          "yahoo_fallback": "Yahoo Finance fallback for dividend / P/E"
         }
       }
     }

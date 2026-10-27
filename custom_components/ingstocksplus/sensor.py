@@ -172,12 +172,16 @@ class INGStockBaseSensor(CoordinatorEntity[INGStocksCoordinator], SensorEntity):
 
     def _identity_attributes(self) -> dict[str, Any]:
         d = self.coordinator.data or {}
-        return {
+        attrs = {
             "isin": d.get("isin"),
             "exchange": d.get("exchange"),
             "currency": d.get("currency"),
             "instrument_type": _get_instrument_type(self.entry),
+            "keyfigures_source": d.get("keyfigures_source"),
         }
+        if d.get("yahoo_symbol"):
+            attrs["yahoo_symbol"] = d.get("yahoo_symbol")
+        return attrs
 
     @property
     def available(self) -> bool:

@@ -6,6 +6,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.selector import (
+    BooleanSelector,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -22,8 +23,10 @@ from .const import (
     CONF_NAME,
     CONF_QUANTITY,
     CONF_SCAN_INTERVAL,
+    CONF_YAHOO_FALLBACK,
     DEFAULT_QUANTITY,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_YAHOO_FALLBACK,
     DOMAIN,
     INSTRUMENT_TYPE_AUTO,
     INSTRUMENT_TYPE_OPTIONS,
@@ -37,15 +40,14 @@ def _user_schema(
     scan_interval: int = DEFAULT_SCAN_INTERVAL,
     instrument_type: str = INSTRUMENT_TYPE_AUTO,
     quantity: float = DEFAULT_QUANTITY,
+    yahoo_fallback: bool = DEFAULT_YAHOO_FALLBACK,
     include_isin: bool = True,
 ) -> vol.Schema:
     fields: dict = {}
     if include_isin:
         fields[vol.Required(CONF_ISIN, default=isin or "")] = TextSelector()
     fields[vol.Optional(CONF_NAME, default=name)] = TextSelector()
-    fields[
-        vol.Required(CONF_SCAN_INTERVAL, default=scan_interval)
-    ] = NumberSelector(
+    fields[vol.Required(CONF_SCAN_INTERVAL, default=scan_interval)] = NumberSelector(
         NumberSelectorConfig(min=1, max=360, mode=NumberSelectorMode.BOX, step=1)
     )
     fields[vol.Required(CONF_INSTRUMENT_TYPE, default=instrument_type)] = SelectSelector(
@@ -58,6 +60,7 @@ def _user_schema(
     fields[vol.Optional(CONF_QUANTITY, default=quantity)] = NumberSelector(
         NumberSelectorConfig(min=0, mode=NumberSelectorMode.BOX, step=0.0001)
     )
+    fields[vol.Optional(CONF_YAHOO_FALLBACK, default=yahoo_fallback)] = BooleanSelector()
     return vol.Schema(fields)
 
 
@@ -92,6 +95,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO
                     )
                     quantity = float(user_input.get(CONF_QUANTITY, DEFAULT_QUANTITY))
+                    yahoo_fallback = bool(
+                        user_input.get(CONF_YAHOO_FALLBACK, DEFAULT_YAHOO_FALLBACK)
+                    )
 
                     await self.async_set_unique_id(f"{DOMAIN}_{isin}")
                     self._abort_if_unique_id_configured()
@@ -105,6 +111,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             CONF_SCAN_INTERVAL: scan_interval,
                             CONF_INSTRUMENT_TYPE: instrument_type,
                             CONF_QUANTITY: quantity,
+                            CONF_YAHOO_FALLBACK: yahoo_fallback,
                         },
                     )
 
@@ -120,6 +127,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO
                 ),
                 quantity=float((user_input or {}).get(CONF_QUANTITY, DEFAULT_QUANTITY)),
+                yahoo_fallback=bool(
+                    (user_input or {}).get(CONF_YAHOO_FALLBACK, DEFAULT_YAHOO_FALLBACK)
+                ),
             ),
             errors=errors,
         )
@@ -130,7 +140,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class OptionsFlowHandler(config_entries.OptionsFlowWithConfigEntry):
-    """Options flow for name, interval, display type, and quantity."""
+    """Options flow for name, interval, display type, quantity, and Yahoo fallback."""
 
     async def async_step_init(self, user_input=None) -> FlowResult:
         entry = self.config_entry
@@ -140,6 +150,9 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithConfigEntry):
             scan_interval = int(user_input.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
             instrument_type = user_input.get(CONF_INSTRUMENT_TYPE, INSTRUMENT_TYPE_AUTO)
             quantity = float(user_input.get(CONF_QUANTITY, DEFAULT_QUANTITY))
+            yahoo_fallback = bool(
+                user_input.get(CONF_YAHOO_FALLBACK, DEFAULT_YAHOO_FALLBACK)
+            )
             return self.async_create_entry(
                 title="",
                 data={
@@ -147,6 +160,7 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithConfigEntry):
                     CONF_SCAN_INTERVAL: scan_interval,
                     CONF_INSTRUMENT_TYPE: instrument_type,
                     CONF_QUANTITY: quantity,
+                    CONF_YAHOO_FALLBACK: yahoo_fallback,
                 },
             )
 
@@ -168,6 +182,12 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithConfigEntry):
                 CONF_QUANTITY, entry.data.get(CONF_QUANTITY, DEFAULT_QUANTITY)
             )
         )
+        current_yahoo = bool(
+            entry.options.get(
+                CONF_YAHOO_FALLBACK,
+                entry.data.get(CONF_YAHOO_FALLBACK, DEFAULT_YAHOO_FALLBACK),
+            )
+        )
 
         return self.async_show_form(
             step_id="init",
@@ -176,6 +196,7 @@ class OptionsFlowHandler(config_entries.OptionsFlowWithConfigEntry):
                 scan_interval=current_interval,
                 instrument_type=current_type,
                 quantity=current_quantity,
+                yahoo_fallback=current_yahoo,
                 include_isin=False,
             ),
         )

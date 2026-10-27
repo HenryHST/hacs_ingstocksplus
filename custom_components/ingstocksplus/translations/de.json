@@ -3,13 +3,14 @@
     "step": {
       "user": {
         "title": "ING Stocks Plus",
-        "description": "Füge eine ISIN hinzu, um Kursdaten und optionale Kennzahlen zu erhalten. Der Instrument-Typ ist nur ein Anzeige-Label.",
+        "description": "Füge eine ISIN hinzu. Stückzahl > 0 aktiviert den Positionswert. Instrument-Typ ist nur Anzeige.",
         "data": {
           "isin": "ISIN",
           "name": "Name (optional)",
           "scan_interval": "Update-Intervall (Minuten)",
           "instrument_type": "Instrument-Typ (nur Anzeige)",
-          "quantity": "Stückzahl (Anteile/Stück)"
+          "quantity": "Stückzahl (Anteile; >0 für Positionswert)",
+          "yahoo_fallback": "Yahoo-Finance-Fallback für Dividende / KGV"
         }
       }
     },
@@ -26,12 +27,13 @@
     "step": {
       "init": {
         "title": "Optionen",
-        "description": "Der Instrument-Typ ist nur ein Anzeige-Label und ändert das API-Verhalten nicht.",
+        "description": "Stückzahl > 0 setzen, damit der Positionswert berechnet wird. Yahoo füllt fehlende Dividende/KGV, wenn ING nichts liefert.",
         "data": {
           "name": "Name (optional)",
           "scan_interval": "Update-Intervall (Minuten)",
           "instrument_type": "Instrument-Typ (nur Anzeige)",
-          "quantity": "Stückzahl (Anteile/Stück)"
+          "quantity": "Stückzahl (Anteile; >0 für Positionswert)",
+          "yahoo_fallback": "Yahoo-Finance-Fallback für Dividende / KGV"
         }
       }
     }
